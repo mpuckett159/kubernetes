@@ -63,6 +63,12 @@ var (
 
 	# Set the client-key-data field in the cluster-admin user using --set-raw-bytes option
 	kubectl config set users.cluster-admin.client-key-data cert_data_here --set-raw-bytes=true`)
+
+	execInteractiveModes = map[string]bool{
+		string(clientcmdapi.NeverExecInteractiveMode):       true,
+		string(clientcmdapi.IfAvailableExecInteractiveMode): true,
+		string(clientcmdapi.AlwaysExecInteractiveMode):      true,
+	}
 )
 
 // NewCmdConfigSet returns a Command instance for 'config set' sub command
@@ -191,14 +197,10 @@ func modifyConfig(curr reflect.Value, steps *navigationSteps, propertyValue stri
 
 	case reflect.Slice:
 		if steps.moreStepsRemaining() {
-			return fmt.Errorf("can't have more steps after bytes. %v", steps)
-		}
-		innerKind := actualCurrValue.Type().Elem().Kind()
-		if innerKind != reflect.Uint8 {
-			return fmt.Errorf("unrecognized slice type. %v", innerKind)
+			return fmt.Errorf("can't have more steps after slice. %v", steps)
 		}
 
-		if unset {
+		if unset && steps.steps[steps.currentStepIndex-2].stepValue != "env" {
 			actualCurrValue.Set(reflect.Zero(actualCurrValue.Type()))
 			return nil
 		}
@@ -206,11 +208,69 @@ func modifyConfig(curr reflect.Value, steps *navigationSteps, propertyValue stri
 		if setRawBytes {
 			actualCurrValue.SetBytes([]byte(propertyValue))
 		} else {
-			val, err := base64.StdEncoding.DecodeString(propertyValue)
-			if err != nil {
-				return fmt.Errorf("error decoding input value: %v", err)
+			innerKind := actualCurrValue.Type().Elem().Kind()
+			if innerKind == reflect.String {
+				argSlice := strings.Split(propertyValue, ",")
+				actualCurrValue.Set(reflect.ValueOf(argSlice))
+			} else if innerKind == reflect.Struct {
+				// The only struct slices we should be getting into here are ExecEnvVars
+				structName := currStep.stepValue
+
+				// If the existing env var config is empty set it and we aren't unsetting create the new value and return
+				if actualCurrValue.IsNil() && !unset {
+					newSlice := reflect.MakeSlice(reflect.TypeOf([]clientcmdapi.ExecEnvVar{}), 1, 1)
+					newStructValue := newSlice.Index(0)
+					newStructValue.Set(reflect.ValueOf(clientcmdapi.ExecEnvVar{
+						Name:  structName,
+						Value: propertyValue,
+					}))
+					actualCurrValue.Set(newSlice)
+					return nil
+				}
+
+				// Find the ExecEnvVar by name, stop if can't find and we're trying to unset because nothing needs to happen
+				existingStructIndex := getExecConfigEnvByName(actualCurrValue, structName)
+				if existingStructIndex < 0 && unset {
+					return nil
+				}
+
+				// If we found the array index and we're unsetting then unset and return
+				if existingStructIndex >= 0 && unset {
+					maxSliceIndex := actualCurrValue.Len()
+					firstSlice := actualCurrValue.Slice(0, existingStructIndex)
+					secondSlice := actualCurrValue.Slice(existingStructIndex+1, maxSliceIndex)
+					for i := 0; i < secondSlice.Len(); i++ {
+						firstSlice = reflect.Append(firstSlice, secondSlice.Index(i))
+					}
+					actualCurrValue.Set(firstSlice)
+					return nil
+				}
+
+				// If key exists set new value, else create new ExecEnvVar struct with specified values, else create new key/value
+				if existingStructIndex >= 0 {
+					existingStructVal := actualCurrValue.Index(existingStructIndex)
+					existingStructVal.Set(reflect.ValueOf(clientcmdapi.ExecEnvVar{
+						Name:  structName,
+						Value: propertyValue,
+					}))
+					return nil
+				} else {
+					newSlice := reflect.MakeSlice(reflect.TypeOf([]clientcmdapi.ExecEnvVar{}), 1, 1)
+					newStructValue := newSlice.Index(0)
+					newStructValue.Set(reflect.ValueOf(clientcmdapi.ExecEnvVar{
+						Name:  structName,
+						Value: propertyValue,
+					}))
+					actualCurrValue.Set(reflect.Append(actualCurrValue, newStructValue))
+					return nil
+				}
+			} else {
+				val, err := base64.StdEncoding.DecodeString(propertyValue)
+				if err != nil {
+					return fmt.Errorf("error decoding input value: %v", err)
+				}
+				actualCurrValue.SetBytes(val)
 			}
-			actualCurrValue.SetBytes(val)
 		}
 		return nil
 
@@ -323,7 +383,72 @@ func modifyConfig(curr reflect.Value, steps *navigationSteps, propertyValue stri
 			}
 
 		case reflect.TypeOf(&clientcmdapi.ExecConfig{}):
-			return fmt.Errorf("found exec, kubectl config set does not currently support manipulating exec settings")
+			// Check and see if we need to create a new auth-provider config or not
+			newActualCurrValue := actualCurrValue.Elem()
+			if actualCurrValue.IsNil() {
+				newValue := reflect.New(reflect.TypeOf(clientcmdapi.ExecConfig{}))
+				actualCurrValue.Set(newValue)
+				newActualCurrValue = actualCurrValue.Elem()
+
+				if !steps.moreStepsRemaining() && unset {
+					return nil
+				}
+			}
+			for fieldIndex := 0; fieldIndex < newActualCurrValue.NumField(); fieldIndex++ {
+				currFieldValue := newActualCurrValue.Field(fieldIndex)
+				currFieldType := newActualCurrValue.Type().Field(fieldIndex)
+				currYamlTag := currFieldType.Tag.Get("json")
+				currFieldTypeYamlName := strings.Split(currYamlTag, ",")[0]
+
+				if currFieldTypeYamlName == currStep.stepValue {
+					thisMapHasNoValue := (currFieldValue.Kind() == reflect.Map && currFieldValue.IsNil())
+
+					if thisMapHasNoValue {
+						newValue := reflect.MakeMap(currFieldValue.Type())
+						currFieldValue.Set(newValue)
+
+						if !steps.moreStepsRemaining() && unset {
+							return nil
+						}
+					}
+
+					if !steps.moreStepsRemaining() && unset {
+						// if we're supposed to unset the value or if the value is a map that doesn't exist, create a new value and overwrite
+						newValue := reflect.New(currFieldValue.Type()).Elem()
+						currFieldValue.Set(newValue)
+						return nil
+					}
+
+					return modifyConfig(currFieldValue.Addr(), steps, propertyValue, unset, setRawBytes)
+				}
+			}
+
+			switch currStep.stepValue {
+			case "interactiveMode":
+				currFieldValue := newActualCurrValue.FieldByName("InteractiveMode")
+
+				if unset {
+					fieldType := currFieldValue.Type()
+					newValue := reflect.ValueOf("")
+					currFieldValue.Set(newValue.Convert(fieldType))
+					return nil
+				}
+
+				// To validate user input we are doing a map lookup using the user provided value
+				if execInteractiveModes[propertyValue] {
+					return modifyConfig(currFieldValue.Addr(), steps, propertyValue, unset, setRawBytes)
+				} else {
+					modes := make([]string, len(execInteractiveModes))
+					i := 0
+					for k := range execInteractiveModes {
+						modes[i] = k
+						i++
+					}
+					return fmt.Errorf("interactiveMode value must be one of: %v", strings.Join(modes, ", "))
+				}
+			}
+
+			return fmt.Errorf("unable to locate path %#v under %v", currStep, newActualCurrValue)
 
 		default:
 			return fmt.Errorf("unable to parse one or more field types of %v", actualCurrValue.Type())
@@ -332,4 +457,27 @@ func modifyConfig(curr reflect.Value, steps *navigationSteps, propertyValue stri
 	}
 
 	panic(fmt.Errorf("unrecognized type: %v\nwanted: %v", actualCurrValue, actualCurrValue.Kind()))
+}
+
+// getExecConfigEnvByName returns the value
+func getExecConfigEnvByName(v reflect.Value, name string) int {
+	if v.Type() != reflect.SliceOf(reflect.TypeOf(clientcmdapi.ExecEnvVar{})) {
+		return -1
+	}
+
+	// Pull slice value out of value object
+	slice, ok := v.Interface().([]clientcmdapi.ExecEnvVar)
+	if !ok {
+		return -1
+	}
+
+	// Iterate through slice of ExecEnvVars and check for a matching Name key, return when found
+	for i, envVar := range slice {
+		if envVar.Name == name {
+			return i
+		}
+	}
+
+	// If we never find the Name key return false
+	return -1
 }
