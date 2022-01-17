@@ -210,8 +210,48 @@ func modifyConfig(curr reflect.Value, steps *navigationSteps, propertyValue stri
 		} else {
 			innerKind := actualCurrValue.Type().Elem().Kind()
 			if innerKind == reflect.String {
-				argSlice := strings.Split(propertyValue, ",")
-				actualCurrValue.Set(reflect.ValueOf(argSlice))
+				function := string(propertyValue[len(propertyValue)-1])
+				switch function {
+				case "-":
+					// Remove an argument
+					propertyValue = string(propertyValue[:len(propertyValue)-1])
+					argSlice := strings.Split(propertyValue, ",")
+					slice, ok := actualCurrValue.Interface().([]string)
+					if !ok {
+						return fmt.Errorf("error fetching existing args slice")
+					}
+
+					for _, arg := range argSlice {
+						for j, existingArgs := range slice {
+							if existingArgs == arg {
+								slice = append(slice[:j], slice[j+1:]...)
+								break
+							}
+						}
+					}
+
+					actualCurrValue.Set(reflect.ValueOf(slice))
+					return nil
+
+				case "+":
+					// Add new argument
+					propertyValue = string(propertyValue[:len(propertyValue)-1])
+					argSlice := strings.Split(propertyValue, ",")
+					slice, ok := actualCurrValue.Interface().([]string)
+					if !ok {
+						return fmt.Errorf("error fetching existing args slice")
+					}
+
+					slice = append(slice, argSlice...)
+					actualCurrValue.Set(reflect.ValueOf(slice))
+					return nil
+
+				default:
+					// Set arg array to supplied values
+					argSlice := strings.Split(propertyValue, ",")
+					actualCurrValue.Set(reflect.ValueOf(argSlice))
+					return nil
+				}
 			} else if innerKind == reflect.Struct {
 				// The only struct slices we should be getting into here are ExecEnvVars
 				structName := currStep.stepValue
