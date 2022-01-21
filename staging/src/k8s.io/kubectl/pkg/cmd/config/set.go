@@ -159,6 +159,26 @@ func modifyConfig(curr reflect.Value, steps *navigationSteps, propertyValue stri
 	switch actualCurrValue.Kind() {
 	case reflect.Map:
 		if !steps.moreStepsRemaining() && !unset {
+			// If the current step type is a Slice we will attempt to set using this
+			if currStep.stepType.Kind() == reflect.Slice {
+				mapKey := reflect.ValueOf(currStep.stepValue)
+				mapValueType := curr.Type().Elem().Elem()
+				currMapValue := actualCurrValue.MapIndex(mapKey)
+				needToSetNewMapValue := currMapValue.Kind() == reflect.Invalid
+				if needToSetNewMapValue {
+					if unset {
+						return fmt.Errorf("current map key `%v` is invalid", mapKey.Interface())
+					}
+					currMapValue = reflect.New(mapValueType)
+					actualCurrValue.SetMapIndex(mapKey, reflect.Indirect(currMapValue))
+				}
+				currentMapValueSlice := actualCurrValue.MapIndex(mapKey).Interface().([]string)
+				newMapValue := editStringSlice(currentMapValueSlice, propertyValue)
+
+				actualCurrValue.SetMapIndex(mapKey, reflect.ValueOf(newMapValue))
+
+				return nil
+			}
 			return fmt.Errorf("can't set a map to a value: %v", actualCurrValue)
 		}
 
