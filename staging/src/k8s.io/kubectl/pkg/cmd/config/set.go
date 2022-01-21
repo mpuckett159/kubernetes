@@ -241,6 +241,11 @@ func modifyConfig(curr reflect.Value, steps *navigationSteps, propertyValue stri
 					if !ok {
 						return fmt.Errorf("error fetching existing args slice")
 					}
+					for _, arg := range argSlice {
+						if propertyValue == arg {
+							return fmt.Errorf("arg already exists")
+						}
+					}
 
 					slice = append(slice, argSlice...)
 					actualCurrValue.Set(reflect.ValueOf(slice))
@@ -249,7 +254,11 @@ func modifyConfig(curr reflect.Value, steps *navigationSteps, propertyValue stri
 				default:
 					// Set arg array to supplied values
 					argSlice := strings.Split(propertyValue, ",")
-					actualCurrValue.Set(reflect.ValueOf(argSlice))
+
+					// Dedupe array using slice to map to slice conversion
+					dedupeArgs := dedupeStringSlice(argSlice)
+
+					actualCurrValue.Set(reflect.ValueOf(dedupeArgs))
 					return nil
 				}
 			} else if innerKind == reflect.Struct {
@@ -520,4 +529,16 @@ func getExecConfigEnvByName(v reflect.Value, name string) int {
 
 	// If we never find the Name key return false
 	return -1
+}
+
+func dedupeStringSlice(slice []string) []string {
+	sliceMap := make(map[string]struct{})
+	for i := 0; i < len(slice); i++ {
+		sliceMap[slice[i]] = struct{}{}
+	}
+	var dedupeSlice []string
+	for k := range sliceMap {
+		dedupeSlice = append(dedupeSlice, k)
+	}
+	return dedupeSlice
 }
