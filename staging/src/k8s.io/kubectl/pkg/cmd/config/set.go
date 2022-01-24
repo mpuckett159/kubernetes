@@ -224,11 +224,6 @@ func modifyConfig(curr reflect.Value, steps *navigationSteps, propertyValue stri
 			return fmt.Errorf("can't have more steps after slice. %v", steps)
 		}
 
-		if unset && steps.steps[steps.currentStepIndex-2].stepValue != "env" {
-			actualCurrValue.Set(reflect.Zero(actualCurrValue.Type()))
-			return nil
-		}
-
 		if setRawBytes {
 			actualCurrValue.SetBytes([]byte(propertyValue))
 		} else {
