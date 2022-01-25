@@ -24,6 +24,7 @@ import (
 
 	"reflect"
 
+	"github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -148,7 +149,7 @@ func (test setConfigTest) run(t *testing.T) {
 			if test.expectedConfig.AuthInfos[k] != nil && config.AuthInfos[k] != nil {
 				test.expectedConfig.AuthInfos[k].LocationOfOrigin = config.AuthInfos[k].LocationOfOrigin
 			} else {
-				t.Errorf("Failed in:%q\n cannot find key %v in either expectedConfig or config", test.description, k)
+				t.Errorf("Failed in:%q\n cannot find key %v in AuthInfos map for expectedConfig and/or config", test.description, k)
 			}
 		}
 	}
@@ -159,6 +160,6 @@ func (test setConfigTest) run(t *testing.T) {
 		}
 	}
 	if !reflect.DeepEqual(*config, test.expectedConfig) {
-		t.Errorf("Failed in: %q\n expected %#v\n but got %#v", test.description, *config, test.expectedConfig)
+		t.Errorf("config want/got mismatch (-want +got):\n%s", cmp.Diff(test.expectedConfig, *config))
 	}
 }
