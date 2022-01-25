@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -511,6 +512,7 @@ func dedupeStringSlice(slice []string) []string {
 	for k := range sliceMap {
 		dedupeSlice = append(dedupeSlice, k)
 	}
+	sort.Strings(dedupeSlice)
 	return dedupeSlice
 }
 
