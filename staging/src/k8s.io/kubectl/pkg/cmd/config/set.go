@@ -160,7 +160,7 @@ func modifyConfig(curr reflect.Value, steps *navigationSteps, propertyValue stri
 	switch actualCurrValue.Kind() {
 	case reflect.Map:
 		if !steps.moreStepsRemaining() && !unset {
-			if currStep.stepType == nil{
+			if currStep.stepType == nil {
 				return fmt.Errorf("map key required to set value")
 			}
 
