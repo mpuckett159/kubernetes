@@ -35,6 +35,7 @@ type setConfigTest struct {
 	config         clientcmdapi.Config
 	args           []string
 	expected       string
+	expectedErr    string
 	expectedConfig clientcmdapi.Config
 }
 
@@ -1190,8 +1191,8 @@ func TestSetConfigToken(t *testing.T) {
 	expectedConfig := clientcmdapi.Config{
 		AuthInfos: map[string]*clientcmdapi.AuthInfo{
 			"foo": {
-				Token: "fake token data",
-				Extensions:    map[string]runtime.Object{},
+				Token:      "fake token data",
+				Extensions: map[string]runtime.Object{},
 			},
 		},
 		Clusters:   map[string]*clientcmdapi.Cluster{},
@@ -1218,8 +1219,8 @@ func TestSetConfigTokenFile(t *testing.T) {
 	expectedConfig := clientcmdapi.Config{
 		AuthInfos: map[string]*clientcmdapi.AuthInfo{
 			"foo": {
-				TokenFile: "./file/path",
-				Extensions:    map[string]runtime.Object{},
+				TokenFile:  "./file/path",
+				Extensions: map[string]runtime.Object{},
 			},
 		},
 		Clusters:   map[string]*clientcmdapi.Cluster{},
@@ -1241,6 +1242,17 @@ func TestSetConfigTokenFile(t *testing.T) {
 	test.run(t)
 }
 
+func TestSetConfigAuthProviderError(t *testing.T) {
+	conf := *clientcmdapi.NewConfig()
+	test := setConfigTest{
+		description: "Testing for kubectl config set users.foo.auth-provider to oidc error",
+		config:      conf,
+		args:        []string{"users.foo.auth-provider", "test"},
+		expectedErr: `can not set auth-provider, must set name or config key, e.g. users.foo.auth-provider.name or users.foo.auth-provider.config.refresh-token`,
+	}
+	test.run(t)
+}
+
 func (test setConfigTest) run(t *testing.T) {
 	fakeKubeFile, err := ioutil.TempFile(os.TempDir(), "")
 	if err != nil {
@@ -1257,9 +1269,24 @@ func (test setConfigTest) run(t *testing.T) {
 	buf := bytes.NewBuffer([]byte{})
 	cmd := NewCmdConfigSet(buf, pathOptions)
 	cmd.SetArgs(test.args)
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("unexpected error executing command: %v", err)
+	opts := &setOptions{
+		configAccess:  pathOptions,
+		propertyName:  test.args[0],
+		propertyValue: test.args[1],
 	}
+	err = opts.run()
+	if test.expectedErr == "" && err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Check for expected error message
+	if test.expectedErr != "" {
+		if err != nil && err.Error() != test.expectedErr {
+			t.Fatalf("expected error:\n %v\nbut got error:\n%v", test.expectedErr, err)
+		}
+		return
+	}
+
 	config, err := clientcmd.LoadFromFile(fakeKubeFile.Name())
 	if err != nil {
 		t.Fatalf("unexpected error loading kubeconfig file: %v", err)
