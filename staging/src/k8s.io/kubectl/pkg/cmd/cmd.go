@@ -85,6 +85,7 @@ import (
 const kubectlCmdHeaders = "KUBECTL_COMMAND_HEADERS"
 
 type KubectlOptions struct {
+	KubercHandler kuberc.Handler
 	PluginHandler PluginHandler
 	Arguments     []string
 	ConfigFlags   *genericclioptions.ConfigFlags
@@ -96,7 +97,10 @@ var defaultConfigFlags = genericclioptions.NewConfigFlags(true).WithDeprecatedPa
 
 // NewDefaultKubectlCommand creates the `kubectl` command with default arguments
 func NewDefaultKubectlCommand() *cobra.Command {
+	// TODO: add something to check for --kuberc flag and override filepath
+	dirname, _ := os.UserHomeDir()
 	return NewDefaultKubectlCommandWithArgs(KubectlOptions{
+		KubercHandler: kuberc.NewDefaultKubercHandler(dirname + "/" + kuberc.DefaultKubercPath),
 		PluginHandler: NewDefaultPluginHandler(plugin.ValidPluginFilenamePrefixes),
 		Arguments:     os.Args,
 		ConfigFlags:   defaultConfigFlags,
@@ -112,16 +116,21 @@ func NewDefaultKubectlCommandWithArgs(o KubectlOptions) *cobra.Command {
 	// args using the defined values in the kuberc config file, and
 	// overwrite the args stored in the KubectlOptions object.
 	if os.Getenv("ENABLE_KUBERC") != "" {
-		fmt.Fprintln(o.IOStreams.Out, "kuberc is enabled!")
-		renderedCmdArgs, err := kuberc.ComposeCmdArgs(o.IOStreams, o.Arguments[1:])
-		if err != nil {
-			fmt.Fprintf(o.IOStreams.ErrOut, "Error: %v\n", err)
-			os.Exit(1)
+		klog.Infoln("kuberc is enabled!")
+
+		if o.KubercHandler != nil {
+			// TODO: Determine how to protect against flags that can be supplied multiple times
+			// inheritence for flags is as follows, in ascending order of hierachy:
+			// 1 - user supplied (ie. passed from command line directly by user)
+			// 2 - from alias definition
+			// 3 - from overrides definition
+			//
+			// This is accomplished by injecting the overrides first, which will then be
+			// overwritten by the aliases, then finally by the user supplied flags in
+			// the subcommand functions.
+			o.KubercHandler.InjectOverrides(cmd)
+			o.KubercHandler.InjectAliases(cmd, o.Arguments)
 		}
-
-		cmd.SetArgs(renderedCmdArgs)
-
-		fmt.Fprintf(o.IOStreams.Out, "redered arguments are: \n%v\n", renderedCmdArgs)
 	}
 
 	if o.PluginHandler == nil {
