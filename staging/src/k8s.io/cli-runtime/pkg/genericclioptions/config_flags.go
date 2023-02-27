@@ -37,6 +37,7 @@ import (
 )
 
 const (
+	flagKubeconfig         = "kubeconfig"
 	flagClusterName        = "cluster"
 	flagAuthInfoName       = "user"
 	flagContext            = "context"
@@ -122,6 +123,90 @@ type ConfigFlags struct {
 	// Allows increasing qps used for discovery, this is useful
 	// in clusters with many registered resources
 	discoveryQPS float32
+}
+
+func parseName(str string) string {
+	if str[:2] == "--" {
+		return str[2:strings.Index(str, "=")]
+	} else if str[:1] == "-" {
+		return str[1:strings.Index(str, " ")]
+	} else {
+		return ""
+	}
+}
+
+func parseValEqualPtr(str string) *string {
+	val := str[strings.Index(str, "=")+1:]
+	val = val[1 : len(val)-1]
+	return &val
+}
+
+func parseValEqual(str string) string {
+	val := str[strings.Index(str, "=")+1:]
+	val = val[1 : len(val)-1]
+	return val
+}
+
+func parseValSpace(str string) string {
+	val := str[strings.Index(str, " ")+1:]
+	return val
+}
+
+// OverwriteDefaultConfigFlags returns ConfigFlags with default values set when no
+// arg is passed, and the set arg for any passed values. The intent of this is to
+// overwrite the default flags with new defaults from the kuberc config file
+func (f *ConfigFlags) OverwriteDefaultConfigFlags(flags []string) {
+	for _, flag := range flags {
+		flagName := parseName(flag)
+		switch flagName {
+		case flagKubeconfig:
+			f.KubeConfig = parseValEqualPtr(flag)
+		case flagClusterName:
+			f.ClusterName = parseValEqualPtr(flag)
+		case flagAuthInfoName:
+			f.AuthInfoName = parseValEqualPtr(flag)
+		case flagContext:
+			f.Context = parseValEqualPtr(flag)
+		case flagNamespace:
+			f.Namespace = parseValEqualPtr(flag)
+		case flagAPIServer:
+			f.APIServer = parseValEqualPtr(flag)
+		case flagTLSServerName:
+			f.TLSServerName = parseValEqualPtr(flag)
+		case flagInsecure:
+			insecureBool := parseValEqual(flag) == "true"
+			f.Insecure = &insecureBool
+		case flagCertFile:
+			f.CertFile = parseValEqualPtr(flag)
+		case flagKeyFile:
+			f.KeyFile = parseValEqualPtr(flag)
+		case flagCAFile:
+			f.CAFile = parseValEqualPtr(flag)
+		case flagBearerToken:
+			f.BearerToken = parseValEqualPtr(flag)
+		case flagImpersonate:
+			f.Impersonate = parseValEqualPtr(flag)
+		case flagImpersonateUID:
+			f.ImpersonateUID = parseValEqualPtr(flag)
+		case flagImpersonateGroup:
+			var groups []string
+			for _, val := range strings.Split(parseValEqual(flag), ",") {
+				groups = append(groups, val)
+			}
+			f.ImpersonateGroup = &groups
+		case flagUsername:
+			f.Username = parseValEqualPtr(flag)
+		case flagPassword:
+			f.Password = parseValEqualPtr(flag)
+		case flagTimeout:
+			f.Timeout = parseValEqualPtr(flag)
+		case flagCacheDir:
+			f.CacheDir = parseValEqualPtr(flag)
+		case flagDisableCompression:
+			disableCompressionBool := parseValEqual(flag) == "true"
+			f.DisableCompression = &disableCompressionBool
+		}
+	}
 }
 
 // ToRESTConfig implements RESTClientGetter.
@@ -339,7 +424,7 @@ func (f *ConfigFlags) toRESTMapper() (meta.RESTMapper, error) {
 // AddFlags binds client configuration flags to a given flagset
 func (f *ConfigFlags) AddFlags(flags *pflag.FlagSet) {
 	if f.KubeConfig != nil {
-		flags.StringVar(f.KubeConfig, "kubeconfig", *f.KubeConfig, "Path to the kubeconfig file to use for CLI requests.")
+		flags.StringVar(f.KubeConfig, flagKubeconfig, *f.KubeConfig, "Path to the kubeconfig file to use for CLI requests.")
 	}
 	if f.CacheDir != nil {
 		flags.StringVar(f.CacheDir, flagCacheDir, *f.CacheDir, "Default cache directory")

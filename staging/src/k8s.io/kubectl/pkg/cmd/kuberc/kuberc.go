@@ -19,6 +19,7 @@ package kuberc
 import (
 	"fmt"
 	"github.com/spf13/cobra"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/klog/v2"
 	"os"
 	"reflect"
@@ -89,12 +90,13 @@ type Override struct {
 // setting default flags arguments based on user's kuberc configuration.
 type Handler interface {
 	InjectAliases(rootCmd *cobra.Command, args []string)
-	InjectOverrides(rootCmd *cobra.Command)
+	InjectOverrides(rootCmd *cobra.Command, args []string)
+	InjectOverridesRoot(flags *genericclioptions.ConfigFlags)
 }
 
 // DefaultKubercHandler implements AliasHandler
 type DefaultKubercHandler struct {
-	command Command
+	Command Command
 }
 
 // NewDefaultKubercHandler instantiates the DefaultKubercHandler by reading the
@@ -102,7 +104,7 @@ type DefaultKubercHandler struct {
 func NewDefaultKubercHandler(kubercPath string) *DefaultKubercHandler {
 	kuberc, err := LoadKubeRC(kubercPath)
 	if err != nil {
-		fmt.Println("error reading kuberc file")
+		return &DefaultKubercHandler{}
 	}
 	return &DefaultKubercHandler{
 		kuberc.Command,
@@ -110,17 +112,8 @@ func NewDefaultKubercHandler(kubercPath string) *DefaultKubercHandler {
 }
 
 func (h *DefaultKubercHandler) InjectAliases(rootCmd *cobra.Command, args []string) {
-	// Get the current command being passed
-	var cmdArgs []string // all "non-flag" arguments
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "-") {
-			break
-		}
-		cmdArgs = append(cmdArgs, arg)
-	}
-
 	// Register all aliases
-	for alias, command := range h.command.Aliases {
+	for alias, command := range h.Command.Aliases {
 		commands := strings.Split(command.Command, " ")
 		cmd, _, err := rootCmd.Find(commands)
 		if err != nil {
@@ -150,25 +143,31 @@ func (h *DefaultKubercHandler) InjectAliases(rootCmd *cobra.Command, args []stri
 		// the kuberc file, giving us "kubectl config raw", then we check to
 		// see if that is equal to commands supplied by the user.
 		fullAliasCmdPath := append(commands[:len(commands)-1], alias)
-		if reflect.DeepEqual(fullAliasCmdPath, cmdArgs[1:]) {
+		if reflect.DeepEqual(fullAliasCmdPath, args[1:]) {
 			klog.Infof("using alias %q, adding flags...", alias)
 			cmd.Flags().Parse(command.Flags)
 		}
 	}
 }
 
-func (h *DefaultKubercHandler) InjectOverrides(rootCmd *cobra.Command) {
-	// TODO: special case for "default" key that will set default flags for all commands
-	for command, override := range h.command.Overrides {
-		commands := strings.Split(command, " ")
-		cmd, _, err := rootCmd.Find(commands)
-		if err != nil {
-			klog.Warningf("Command %q not found to set default flags for", command)
-			continue
+func (h *DefaultKubercHandler) InjectOverrides(rootCmd *cobra.Command, args []string) {
+	cmd, _, err := rootCmd.Find(args)
+	if err != nil {
+		klog.Infof("could not find command %q", args)
+		return
+	}
+	if flags, found := h.Command.Overrides[strings.Join(args, " ")]; found {
+		klog.Infof("adding default flags %q for command %q", flags.Flags, strings.Join(args, " "))
+		if err := cmd.Flags().Parse(flags.Flags); err != nil {
+			klog.Infof("error parsing flags - %q", err)
 		}
-		// inject default flags
-		klog.Infof("adding flags %v for command %q", override.Flags, command)
-		cmd.Flags().Parse(override.Flags)
+	}
+}
+
+func (h *DefaultKubercHandler) InjectOverridesRoot(flags *genericclioptions.ConfigFlags) {
+	if kubercFlags, found := h.Command.Overrides["default"]; found {
+		klog.Infof("adding default flags %q", kubercFlags.Flags)
+		flags.OverwriteDefaultConfigFlags(kubercFlags.Flags)
 	}
 }
 
@@ -185,7 +184,6 @@ func LoadKubeRC(path string) (Preferences, error) {
 	if err := yaml.Unmarshal(kubercBytes, &preferences); err != nil {
 		fmt.Println("error unmarshalling the yaml")
 	}
-	klog.Infof("kuberc:\n%v", preferences)
 
 	return preferences, nil
 }
