@@ -330,7 +330,7 @@ func NewKubectlCommand(o KubectlOptions) *cobra.Command {
 	if os.Getenv("ENABLE_KUBERC") != "" {
 		klog.Infoln("kuberc is enabled!")
 		if o.KubercHandler != nil {
-			o.KubercHandler.InjectOverridesRoot(kubeConfigFlags)
+			o.KubercHandler.InjectOverridesRoot(kubeConfigFlags, o.Arguments)
 		}
 	}
 	kubeConfigFlags.AddFlags(flags)
@@ -469,6 +469,9 @@ func NewKubectlCommand(o KubectlOptions) *cobra.Command {
 			// the subcommand functions.
 
 			// Get the current command being passed
+			// Note: can't use cmds.ArgsLenAtDash because it only looks for "--" and not
+			// "-", should probably try and make a PR for spf13/pflag to change that, should
+			// discuss with others to see if that makes sense.
 			var cmdArgs []string // all "non-flag" arguments
 			for _, arg := range o.Arguments[1:] {
 				if strings.HasPrefix(arg, "-") {

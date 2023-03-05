@@ -47,9 +47,8 @@ func NewCmdConfig(f cmdutil.Factory, streams genericclioptions.IOStreams) *cobra
 		Run: cmdutil.DefaultSubCommandRun(streams.ErrOut),
 	}
 
+	// Just get the config access object so the add command lines look less ugly
 	configAccess := f.ToRawKubeConfigLoader().ConfigAccess()
-	// file paths are common to all sub commands
-	cmd.PersistentFlags().StringVar(&pathOptions.LoadingRules.ExplicitPath, pathOptions.ExplicitFileFlag, pathOptions.LoadingRules.ExplicitPath, "use a particular kubeconfig file")
 
 	// TODO(juanvallejo): update all subcommands to work with genericclioptions.IOStreams
 	cmd.AddCommand(NewCmdConfigView(streams, configAccess))

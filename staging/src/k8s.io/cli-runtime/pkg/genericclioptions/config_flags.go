@@ -42,7 +42,9 @@ const (
 	flagAuthInfoName       = "user"
 	flagContext            = "context"
 	flagNamespace          = "namespace"
+	shortFlagNamespace     = "n"
 	flagAPIServer          = "server"
+	shortFlagServer        = "s"
 	flagTLSServerName      = "tls-server-name"
 	flagInsecure           = "insecure-skip-tls-verify"
 	flagCertFile           = "client-certificate"
@@ -126,6 +128,10 @@ type ConfigFlags struct {
 }
 
 func parseName(str string) string {
+	if len(str) < 1 {
+		// just return an empty string if it's empty
+		return ""
+	}
 	if str[:2] == "--" {
 		return str[2:strings.Index(str, "=")]
 	} else if str[:1] == "-" {
@@ -155,56 +161,99 @@ func parseValSpace(str string) string {
 // OverwriteDefaultConfigFlags returns ConfigFlags with default values set when no
 // arg is passed, and the set arg for any passed values. The intent of this is to
 // overwrite the default flags with new defaults from the kuberc config file
-func (f *ConfigFlags) OverwriteDefaultConfigFlags(flags []string) {
+func (f *ConfigFlags) OverwriteDefaultConfigFlags(flags []string, args []string) {
+	// lazy search for flags in user supplied args by just joining all args with a
+	// space, then doing a simple substring search using strings.Contains
+	argsStr := strings.Join(args, " ")
 	for _, flag := range flags {
 		flagName := parseName(flag)
 		switch flagName {
 		case flagKubeconfig:
-			f.KubeConfig = parseValEqualPtr(flag)
-		case flagClusterName:
-			f.ClusterName = parseValEqualPtr(flag)
-		case flagAuthInfoName:
-			f.AuthInfoName = parseValEqualPtr(flag)
-		case flagContext:
-			f.Context = parseValEqualPtr(flag)
-		case flagNamespace:
-			f.Namespace = parseValEqualPtr(flag)
-		case flagAPIServer:
-			f.APIServer = parseValEqualPtr(flag)
-		case flagTLSServerName:
-			f.TLSServerName = parseValEqualPtr(flag)
-		case flagInsecure:
-			insecureBool := parseValEqual(flag) == "true"
-			f.Insecure = &insecureBool
-		case flagCertFile:
-			f.CertFile = parseValEqualPtr(flag)
-		case flagKeyFile:
-			f.KeyFile = parseValEqualPtr(flag)
-		case flagCAFile:
-			f.CAFile = parseValEqualPtr(flag)
-		case flagBearerToken:
-			f.BearerToken = parseValEqualPtr(flag)
-		case flagImpersonate:
-			f.Impersonate = parseValEqualPtr(flag)
-		case flagImpersonateUID:
-			f.ImpersonateUID = parseValEqualPtr(flag)
-		case flagImpersonateGroup:
-			var groups []string
-			for _, val := range strings.Split(parseValEqual(flag), ",") {
-				groups = append(groups, val)
+			if !strings.Contains(argsStr, "--"+flagKubeconfig) {
+				f.KubeConfig = parseValEqualPtr(flag)
 			}
-			f.ImpersonateGroup = &groups
+		case flagClusterName:
+			if !strings.Contains(argsStr, "--"+flagClusterName) {
+				f.ClusterName = parseValEqualPtr(flag)
+			}
+		case flagAuthInfoName:
+			if !strings.Contains(argsStr, "--"+flagAuthInfoName) {
+				f.AuthInfoName = parseValEqualPtr(flag)
+			}
+		case flagContext:
+			if !strings.Contains(argsStr, "--"+flagContext) {
+				f.Context = parseValEqualPtr(flag)
+			}
+		case flagNamespace:
+			if !strings.Contains(argsStr, "--"+flagNamespace) && !strings.Contains(argsStr, "-"+shortFlagNamespace) {
+				f.Namespace = parseValEqualPtr(flag)
+			}
+		case flagAPIServer:
+			if !strings.Contains(argsStr, "--"+flagAPIServer) && !strings.Contains(argsStr, "-"+shortFlagServer) {
+				f.APIServer = parseValEqualPtr(flag)
+			}
+		case flagTLSServerName:
+			if !strings.Contains(argsStr, "--"+flagTLSServerName) {
+				f.TLSServerName = parseValEqualPtr(flag)
+			}
+		case flagInsecure:
+			if !strings.Contains(argsStr, "--"+flagInsecure) {
+				insecureBool := parseValEqual(flag) == "true"
+				f.Insecure = &insecureBool
+			}
+		case flagCertFile:
+			if !strings.Contains(argsStr, "--"+flagCertFile) {
+				f.CertFile = parseValEqualPtr(flag)
+			}
+		case flagKeyFile:
+			if !strings.Contains(argsStr, "--"+flagKeyFile) {
+				f.KeyFile = parseValEqualPtr(flag)
+			}
+		case flagCAFile:
+			if !strings.Contains(argsStr, "--"+flagCAFile) {
+				f.CAFile = parseValEqualPtr(flag)
+			}
+		case flagBearerToken:
+			if !strings.Contains(argsStr, "--"+flagBearerToken) {
+				f.BearerToken = parseValEqualPtr(flag)
+			}
+		case flagImpersonate:
+			if !strings.Contains(argsStr, "--"+flagImpersonate) {
+				f.Impersonate = parseValEqualPtr(flag)
+			}
+		case flagImpersonateUID:
+			if !strings.Contains(argsStr, "--"+flagImpersonateUID) {
+				f.ImpersonateUID = parseValEqualPtr(flag)
+			}
+		case flagImpersonateGroup:
+			if !strings.Contains(argsStr, "--"+flagImpersonateGroup) {
+				var groups []string
+				for _, val := range strings.Split(parseValEqual(flag), ",") {
+					groups = append(groups, val)
+				}
+				f.ImpersonateGroup = &groups
+			}
 		case flagUsername:
-			f.Username = parseValEqualPtr(flag)
+			if !strings.Contains(argsStr, "--"+flagUsername) {
+				f.Username = parseValEqualPtr(flag)
+			}
 		case flagPassword:
-			f.Password = parseValEqualPtr(flag)
+			if !strings.Contains(argsStr, "--"+flagPassword) {
+				f.Password = parseValEqualPtr(flag)
+			}
 		case flagTimeout:
-			f.Timeout = parseValEqualPtr(flag)
+			if !strings.Contains(argsStr, "--"+flagTimeout) {
+				f.Timeout = parseValEqualPtr(flag)
+			}
 		case flagCacheDir:
-			f.CacheDir = parseValEqualPtr(flag)
+			if !strings.Contains(argsStr, "--"+flagCacheDir) {
+				f.CacheDir = parseValEqualPtr(flag)
+			}
 		case flagDisableCompression:
-			disableCompressionBool := parseValEqual(flag) == "true"
-			f.DisableCompression = &disableCompressionBool
+			if !strings.Contains(argsStr, "--"+flagCacheDir) {
+				disableCompressionBool := parseValEqual(flag) == "true"
+				f.DisableCompression = &disableCompressionBool
+			}
 		}
 	}
 }
