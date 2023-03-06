@@ -17,13 +17,14 @@ limitations under the License.
 package kuberc
 
 import (
-	"github.com/spf13/cobra"
-	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/klog/v2"
 	"os"
 	"reflect"
 	"strings"
 
+	"github.com/spf13/cobra"
+
+	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
 )
 
